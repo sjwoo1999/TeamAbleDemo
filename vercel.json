@@ -1,0 +1,6 @@
+{
+    "builds": [
+      { "src": "TeamAbleDemo.html", "use": "@vercel/static" }
+    ]
+  }
+  
