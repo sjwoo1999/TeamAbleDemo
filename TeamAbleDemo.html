@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>협업 성향 테스트 (8카테고리/16유형)</title>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      background: linear-gradient(135deg, #8B0028, #1833DB);
+      color: white;
+      text-align: center;
+      margin: 20px;
+    }
+    .container {
+      max-width: 800px;
+      background: white;
+      color: black;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+      margin: auto;
+    }
+    h1 {
+      color: #333;
+    }
+    .question {
+      font-size: 18px;
+      margin: 15px 0;
+      font-weight: bold;
+    }
+    .options {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      gap: 5px;
+    }
+    label {
+      background: #ddd;
+      padding: 10px;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    label:hover {
+      background: #bbb;
+    }
+    button {
+      background-color: #007BFF;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 5px;
+      transition: 0.2s;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    .result-container {
+      display: none;
+      margin-top: 20px;
+    }
+    .result-text {
+      font-size: 20px;
+      font-weight: bold;
+    }
+    canvas {
+      max-width: 100%;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>협업 성향 테스트 (8카테고리/16유형)</h1>
+
+    <!-- 질문 목록 표시 영역 -->
+    <div id="question-container"></div>
+
+    <!-- 버튼들 -->
+    <button onclick="setAllScores(3)">전체 3점 선택</button>
+    <button onclick="setRandomScores()">랜덤 점수 선택</button>
+    <button onclick="calculateType()">결과 보기</button>
+
+    <!-- 결과 표시 영역 -->
+    <div class="result-container" id="result-container">
+      <h2>당신의 협업 유형</h2>
+      <p class="result-text" id="resultText"></p>
+      <div id="compatibility"></div>
+      <canvas id="resultChart"></canvas>
+    </div>
+  </div>
+
+  <script>
+    /*
+     * Chain-of-Thought (CoT):
+     * 1) 8개 카테고리: L/U/C/I/T/A/E/P
+     * 2) 질문: 카테고리별 3문항, 한 문항 최대 5점 -> 카테고리 최대 15점
+     * 3) 차트(radar)에서 max = 15로 고정 (요청사항1 반영)
+     * 4) 최종 유형 16개 (L vs U, C vs I, T vs A, E vs P), personalities 오브젝트로 해설+궁합
+     * 5) calculateType()에서 scores 합산 후 유형 결정 -> personalities[type] 참고
+     */
+
+    // (A) 질문 배열 (카테고리별 3문항, 총 24문항 예시)
+    const questions = [
+      // L (3)
+      { text: "팀 프로젝트에서 리더십을 발휘해 방향을 제시하는 것을 좋아한다.", category: "L" },
+      { text: "팀 내에서 목표를 설정하고, 구성원들을 독려하며 이끌어가는 편이다.", category: "L" },
+      { text: "나에게 주어진 권한이 있다면, 과감하게 결정하고 책임지는 편이다.", category: "L" },
+
+      // U (3)
+      { text: "다양한 의견이 나올 때, 모두가 참여할 수 있도록 중재하거나 조정한다.", category: "U" },
+      { text: "합의점을 찾기 위해 팀원들의 감정과 욕구를 잘 살펴보려 한다.", category: "U" },
+      { text: "팀 분위기가 과열되거나 갈등이 생기면, 균형감 있게 조율하는 역할을 맡는다.", category: "U" },
+
+      // C (3)
+      { text: "팀원들의 이야기를 경청하고, 소통을 통해 함께 성장하는 과정을 중요하게 여긴다.", category: "C" },
+      { text: "이해관계가 다른 팀원들과도 적극적으로 협력해, 시너지를 만드는 편이다.", category: "C" },
+      { text: "프로젝트 진행 중, 서로의 의견을 유연하게 조율하고 조화롭게 협업하는 것을 선호한다.", category: "C" },
+
+      // I (3)
+      { text: "나만의 방식으로 독립적으로 작업할 때, 집중력이 더 높아지는 편이다.", category: "I" },
+      { text: "스스로 문제를 파악하고 해결하는 과정을 선호하며, 외부 간섭이 적을수록 좋다고 느낀다.", category: "I" },
+      { text: "일을 할 때 다른 사람과 의논하기보다는, 먼저 내 방식으로 시도해보고 싶다.", category: "I" },
+
+      // T (3)
+      { text: "논리적으로 사고하고 데이터를 분석하여 결정하는 과정을 선호한다.", category: "T" },
+      { text: "정해진 사실이나 지표가 있으면, 직관보다는 수치나 근거를 우선 고려한다.", category: "T" },
+      { text: "합리적인 판단과 냉철한 분석이 프로젝트 성패를 좌우한다고 믿는다.", category: "T" },
+
+      // A (3)
+      { text: "새롭고 창의적인 아이디어를 찾거나, 기존 방식을 바꾸는 데 거부감이 없다.", category: "A" },
+      { text: "문제가 생기면, 틀을 벗어난 다양한 접근법을 시도해보는 편이다.", category: "A" },
+      { text: "급격한 변화가 와도, 오히려 그 상황을 기회로 삼아 도전하는 것을 즐긴다.", category: "A" },
+
+      // E (3)
+      { text: "맡은 일이 주어지면 묵묵히 실행하고, 끝까지 책임을 다하려고 한다.", category: "E" },
+      { text: "완벽한 계획보다는, 주어진 환경에서 바로 실행해 결과물을 내는 것에 집중한다.", category: "E" },
+      { text: "평소 말수는 적어도, 일을 시작하면 속도감 있게 처리하는 편이다.", category: "E" },
+
+      // P (3)
+      { text: "장기적인 계획 수립과 효율적인 일정 관리로 프로젝트를 안정적으로 이끌고 싶다.", category: "P" },
+      { text: "일정과 자원을 체계적으로 분배하여, 팀이 목표를 달성하도록 관리하는 편이다.", category: "P" },
+      { text: "불확실성을 줄이기 위해, 사전에 리스크를 파악하고 준비하는 것이 중요하다고 본다.", category: "P" }
+    ];
+
+    // (B) 점수 저장 (8개 카테고리)
+    let answers = new Array(questions.length).fill(null);
+    let scores  = { L: 0, U: 0, C: 0, I: 0, T: 0, A: 0, E: 0, P: 0 };
+
+    // (C) 16개 유형 객체 (<코드1>)
+    //     - desc: 자세한 해설
+    //     - best, avoid: 궁합
+    const personalities = {
+      "LCTE": {
+        desc: `
+          <p><strong>LCTE 유형</strong>은 논리적이고 계획적인 리더십을 지닌 성향입니다. 
+          데이터를 기반으로 의사결정을 내리며, 체계적 실행을 중요하게 생각합니다. 
+          필요한 경우 과감한 결단을 내릴 수 있고, 완벽한 계획 수립 후에 행동에 옮기는 편입니다.</p>
+        `,
+        best: ["LCTP", "UITE"],
+        avoid: ["UIAP", "LIAE"]
+      },
+      "LCTP": {
+        desc: `
+          <p><strong>LCTP 유형</strong>은 리더십과 협업을 모두 중시하면서도, 
+          논리적 사고와 체계적 계획을 통한 문제 해결을 추구하는 성향입니다. 
+          계획된 목표를 실행하는 데 집중하며, 데이터에 근거해 효율적인 진행 방안을 모색합니다.</p>
+        `,
+        best: ["LCTE", "UCAP"],
+        avoid: ["LIAP", "UCIE"]
+      },
+      "LCAE": {
+        desc: `
+          <p><strong>LCAE 유형</strong>은 혁신적인 리더십과 창의적 사고, 실행력을 고루 갖춘 성향입니다. 
+          새로운 아이디어를 적극적으로 받아들이며, 팀을 주도적으로 이끌어 나가되 
+          필요하다면 즉각적인 실행을 통해 빠른 성과를 내기도 합니다.</p>
+        `,
+        best: ["LCTE", "LCAP"],
+        avoid: ["UITE", "UIAP"]
+      },
+      "LCAP": {
+        desc: `
+          <p><strong>LCAP 유형</strong>은 리더십과 소통, 창의적 사고, 그리고 계획 능력을 두루 갖춘 유형입니다.
+          팀원을 독려하며 목표 달성에 집중하고, 동시에 변화를 유연하게 받아들이지만
+          사전 계획을 통해 위험을 줄이려는 특징이 있습니다.</p>
+        `,
+        best: ["LCAE", "UCTP"],
+        avoid: ["LIAP", "UITE"]
+      },
+      "LITE": {
+        desc: `
+          <p><strong>LITE 유형</strong>은 독립성을 중시하면서도 논리적이고 실행지향적인 리더십을 갖춘 성향입니다.
+          스스로 방향을 잡아 추진하며, 데이터 분석과 명확한 근거를 토대로 빠른 실행을 선호합니다.</p>
+        `,
+        best: ["LCTE", "UIAE"],
+        avoid: ["LCAP", "UCAP"]
+      },
+      "LITP": {
+        desc: `
+          <p><strong>LITP 유형</strong>은 독립적 리더십과 논리, 계획을 고루 중시하는 성향입니다.
+          자신만의 방식으로 목표를 설정하고, 체계적으로 추진하는 과정을 선호합니다. 
+          팀과의 협업도 중요하지만, 독립적 판단을 유지하려는 경향이 강합니다.</p>
+        `,
+        best: ["LITE", "UIAP"],
+        avoid: ["LCAE", "UCTE"]
+      },
+      "LIAE": {
+        desc: `
+          <p><strong>LIAE 유형</strong>은 독립적이면서 창의적인 리더십을 보여주며, 
+          상황에 맞춰 빠르게 실행하는 편입니다. 자기 주도적 사고와 혁신을 강조하고, 
+          필요하면 즉흥적으로라도 시도해보는 과감함이 있습니다.</p>
+        `,
+        best: ["LITE", "LCAP"],
+        avoid: ["UCTP", "UIAE"]
+      },
+      "LIAP": {
+        desc: `
+          <p><strong>LIAP 유형</strong>은 독립적이고 창의적이며, 동시에 계획성을 갖춘 리더십입니다.
+          자신의 아이디어를 토대로 주도적으로 움직이지만, 필요 시 명확한 로드맵을 세워
+          성과를 내는 데 집중합니다.</p>
+        `,
+        best: ["LIAE", "LITP"],
+        avoid: ["LCTE", "UCAE"]
+      },
+      "UCTE": {
+        desc: `
+          <p><strong>UCTE 유형</strong>은 팀 조율(U)과 논리(T), 그리고 실행(E)를 강조하는 성향입니다.
+          갈등 상황에서도 합리적인 근거와 실행력을 기반으로 문제를 해결하며,
+          팀원들의 의견을 균형감 있게 통합하는 능력이 뛰어납니다.</p>
+        `,
+        best: ["LCTE", "UCAE"],
+        avoid: ["LIAP", "LCAE"]
+      },
+      "UCTP": {
+        desc: `
+          <p><strong>UCTP 유형</strong>은 팀 조율(U)과 논리(T), 계획(P)을 중시하는 성향입니다.
+          프로젝트 목표를 명확히 설정하고, 서로 다른 의견을 조율하여 체계적으로 추진합니다.
+          갈등 조정과 목표 달성에 능숙합니다.</p>
+        `,
+        best: ["UCTE", "LCAP"],
+        avoid: ["LIAE", "LIAP"]
+      },
+      "UCAE": {
+        desc: `
+          <p><strong>UCAE 유형</strong>은 팀 내 소통과 창의적 사고, 그리고 실행력을 조화시키는 유형입니다.
+          갈등을 줄이고 협업을 끌어내는 동시에, 유연한 사고방식으로 프로젝트에 새 바람을 불어넣습니다.</p>
+        `,
+        best: ["UCTE", "UCAP"],
+        avoid: ["LCTP", "LIAP"]
+      },
+      "UCAP": {
+        desc: `
+          <p><strong>UCAP 유형</strong>은 팀 조율(U)과 창의(A), 계획(P)를 모두 중요하게 보는 성향입니다.
+          새로운 아이디어를 팀원들과 잘 융합해 내며, 체계적으로 추진해서 완성도를 높이려고 합니다.
+          갈등 조정과 기획력이 뛰어나다는 평가를 받기 쉽습니다.</p>
+        `,
+        best: ["UCAE", "LCTP"],
+        avoid: ["LITE", "LIAE"]
+      },
+      "UITE": {
+        desc: `
+          <p><strong>UITE 유형</strong>은 팀 조율(U)과 독립성(I), 논리(T), 실행(E)를 혼합한 독특한 성향입니다.
+          논리적 근거를 중시하면서도, 필요 시에는 독립적인 결정을 빠르게 실행에 옮깁니다.
+          사람들을 중재하되 본인만의 스타일도 확고합니다.</p>
+        `,
+        best: ["LITE", "UIAE"],
+        avoid: ["LCAP", "LCTE"]
+      },
+      "UITP": {
+        desc: `
+          <p><strong>UITP 유형</strong>은 팀 조율(U)과 독립(I)을 균형 있게 가져가며,
+          논리(T)와 계획(P)를 통해 체계적인 접근을 지향합니다. 
+          협업하면서도 스스로의 판단을 중요시하고, 프로젝트 목표를 꾸준히 관리합니다.</p>
+        `,
+        best: ["UITE", "UIAP"],
+        avoid: ["LCAE", "LCTE"]
+      },
+      "UIAE": {
+        desc: `
+          <p><strong>UIAE 유형</strong>은 팀 조율(U)과 독립(I), 창의(A), 실행(E)를 고루 섞은 유형입니다.
+          빠른 상황 판단으로 새로운 아이디어를 실행하는 데 능하지만, 
+          동시에 다른 사람들의 의견도 아우르는 독특한 균형감을 보여줍니다.</p>
+        `,
+        best: ["UITE", "LIAE"],
+        avoid: ["LCTP", "LCAP"]
+      },
+      "UIAP": {
+        desc: `
+          <p><strong>UIAP 유형</strong>은 팀 조율(U)과 독립(I)을 동시에 추구하면서, 
+          창의(A)와 계획(P) 모두 놓치지 않는 성향입니다. 
+          새 아이디어를 주도적으로 제안하고, 이를 체계적으로 실행하는 능력이 돋보입니다.</p>
+        `,
+        best: ["UITP", "LITP"],
+        avoid: ["LCTE", "LCAE"]
+      }
+    };
+
+    // (D) 페이지 로딩 시 질문 렌더링
+    window.onload = function() {
+      renderQuestions();
+    };
+
+    function renderQuestions() {
+      const container = document.getElementById("question-container");
+      questions.forEach((q, index) => {
+        const div = document.createElement("div");
+        div.classList.add("question");
+        div.innerHTML = `
+          <p>${index + 1}. ${q.text}</p>
+          <div class="options">
+            ${[1,2,3,4,5].map(val => `
+              <label>
+                <input 
+                  type="radio" 
+                  name="q${index}"
+                  value="${val}"
+                  onchange="updateScore('${q.category}', ${val}, ${index})"
+                >
+                ${val}
+              </label>
+            `).join("")}
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function updateScore(category, value, index) {
+      // 이전 선택값 빼기
+      if (answers[index] !== null) {
+        scores[category] -= answers[index];
+      }
+      // 새 값 추가
+      answers[index] = value;
+      scores[category] += value;
+    }
+
+    function setAllScores(value) {
+      questions.forEach((q, idx) => {
+        const radios = document.getElementsByName("q" + idx);
+        radios.forEach(radio => { radio.checked = false; });
+        radios.forEach(radio => {
+          if (radio.value == value) {
+            radio.checked = true;
+            radio.dispatchEvent(new Event("change"));
+          }
+        });
+      });
+    }
+
+    function setRandomScores() {
+      questions.forEach((q, idx) => {
+        const radios = document.getElementsByName("q" + idx);
+        radios.forEach(radio => { radio.checked = false; });
+        const randomValue = Math.floor(Math.random() * 5) + 1;
+        radios.forEach(radio => {
+          if (radio.value == randomValue) {
+            radio.checked = true;
+            radio.dispatchEvent(new Event("change"));
+          }
+        });
+      });
+    }
+
+    function calculateType() {
+      // scores 리셋
+      resetScores();
+
+      // answers 합산
+      answers.forEach((val, idx) => {
+        if (val !== null) {
+          scores[questions[idx].category] += val;
+        }
+      });
+
+      // 4글자 유형 결정(L vs U, C vs I, T vs A, E vs P)
+      let type = "";
+      type += (scores.L > scores.U) ? "L" : "U";
+      type += (scores.C > scores.I) ? "C" : "I";
+      type += (scores.T > scores.A) ? "T" : "A";
+      type += (scores.E > scores.P) ? "E" : "P";
+
+      // 화면 표시
+      document.getElementById("result-container").style.display = "block";
+      const resultText = document.getElementById("resultText");
+      resultText.innerHTML = `당신의 유형: <strong>${type}</strong><br>` + personalities[type].desc;
+
+      // (코드2) 궁합 텍스트
+      document.getElementById("compatibility").innerHTML = `
+        <p>✅ 잘 맞는 성향: ${personalities[type].best.join(", ")}</p>
+        <p>❌ 피해야 할 성향: ${personalities[type].avoid.join(", ")}</p>
+      `;
+
+      // 차트 생성/갱신
+      drawChart();
+    }
+
+    function resetScores() {
+      for (let key in scores) {
+        scores[key] = 0;
+      }
+    }
+
+    let radarChart = null;
+    function drawChart() {
+      // 기존 차트 있으면 destroy
+      if (radarChart) {
+        radarChart.destroy();
+      }
+      const ctx = document.getElementById("resultChart").getContext("2d");
+      radarChart = new Chart(ctx, {
+        type: "radar",
+        data: {
+          labels: ["L(리더)", "U(조율)", "C(소통)", "I(독립)", 
+                   "T(논리)", "A(창의)", "E(실행)", "P(계획)"],
+          datasets: [{
+            label: "점수",
+            data: [
+              scores.L,
+              scores.U,
+              scores.C,
+              scores.I,
+              scores.T,
+              scores.A,
+              scores.E,
+              scores.P
+            ],
+            borderColor: "#007BFF",
+            backgroundColor: "rgba(0, 123, 255, 0.4)",
+            fill: true
+          }]
+        },
+        options: {
+          scales: {
+            r: {
+              // (요청사항1) 3문항 × 5점 = 15점 -> max 고정
+              min: 0,
+              max: 15
+            }
+          }
+        }
+      });
+    }
+  </script>
+</body>
+</html>
