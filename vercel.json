@@ -1,6 +1,6 @@
 {
-    "builds": [
-      { "src": "TeamAbleDemo.html", "use": "@vercel/static" }
+    "rewrites": [
+      { "source": "/(.*)", "destination": "/TeamAbleDemo.html" }
     ]
   }
   
